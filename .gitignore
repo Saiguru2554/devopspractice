@@ -1,0 +1,46 @@
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing and coverage
+coverage/
+
+# Temporary files
+.tmp/
+temp/
+
+# Local configuration
+*.local
+
+# AWS credentials and configuration
+.aws/
+.aws-sam/
+
+# Serverless build artifacts
+.sam-build/
