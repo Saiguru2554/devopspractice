@@ -16,36 +16,30 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build and Validate Todo App
+  build-and-test:
+    name: Test and Build Todo App
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Download repository
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      # Step 2: Configure Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      # Step 3: Install dependencies
       - name: Install dependencies
         run: npm ci
 
-      # Step 4: Build React application
+      - name: Run automated tests
+        run: npm test
+
       - name: Build application
         run: npm run build
 
-      # Step 5: Verify production build
-      - name: Verify build output
+      - name: Verify production build
         run: |
-          if [ -d "dist" ]; then
-            echo "Production build generated successfully!"
-          else
-            echo "Build directory not found!"
-            exit 1
-          fi
+          test -d dist
+          echo "Production build successful!"
