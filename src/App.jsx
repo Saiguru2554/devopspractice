@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState  } from 'react';
 import {
   Activity,
   AlertCircle,
@@ -44,14 +44,13 @@ export default function App() {
   const [apiBase, setApiBase] = useState(() => localStorage.getItem(STORAGE_KEY) || '');
   const [taskText, setTaskText] = useState('');
   const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => Boolean(localStorage.getItem(STORAGE_KEY)));
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState('');
   const [notice, setNotice] = useState(null);
   const [showSettings, setShowSettings] = useState(() => !localStorage.getItem(STORAGE_KEY));
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  const endpoint = useMemo(() => apiBase ? `${normalizeApiBase(apiBase)}/todos` : '', [apiBase]);
 
   const loadTasks = useCallback(async (base = apiBase, quiet = false) => {
     const cleaned = normalizeApiBase(base || '');
@@ -93,10 +92,77 @@ export default function App() {
   }, [apiBase]);
 
   useEffect(() => {
-    if (apiBase) loadTasks(apiBase, true);
-    // On initial mount, validate the saved URL once.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!apiBase) return undefined;
+
+    const controller = new AbortController();
+    let active = true;
+
+    const fetchInitialTasks = async () => {
+      try {
+        const cleaned = normalizeApiBase(apiBase);
+        const parsedUrl = new URL(cleaned);
+
+        if (parsedUrl.protocol !== 'https:') {
+          throw new Error('The API URL must start with https://. Check your saved API Gateway Invoke URL.');
+        }
+
+        const response = await fetch(`${cleaned}/todos`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+
+        const responseText = await response.text();
+        let data;
+
+        try {
+          data = responseText ? JSON.parse(responseText) : null;
+        } catch {
+          throw new Error(`API returned non-JSON content (HTTP ${response.status}). Check the Invoke URL.`);
+        }
+
+        if (!response.ok) {
+          throw new Error(data?.message || `GET failed with HTTP ${response.status}`);
+        }
+
+        if (!Array.isArray(data)) {
+          throw new Error('Expected a JSON array from GET /todos. Check that the route is connected to the correct Lambda.');
+        }
+
+        if (!active) return;
+
+        setTasks(
+          data
+            .map((item) => ({
+              id: String(item.id ?? ''),
+              task: String(item.task ?? ''),
+            }))
+            .filter((item) => item.id)
+        );
+        setApiBase(cleaned);
+        setApiDraft(cleaned);
+        localStorage.setItem(STORAGE_KEY, cleaned);
+        setLastUpdated(new Date());
+        setNotice({
+          type: 'success',
+          text: 'Connected to AWS. Tasks are synced with DynamoDB.',
+        });
+        setShowSettings(false);
+      } catch (error) {
+        if (!active || error.name === 'AbortError') return;
+        setNotice({ type: 'error', text: friendlyError(error) });
+        setShowSettings(true);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    fetchInitialTasks();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [apiBase]);
 
   const saveConnection = async (event) => {
     event.preventDefault();
@@ -105,8 +171,11 @@ export default function App() {
       setNotice({ type: 'error', text: 'Paste the API Gateway Invoke URL first.' });
       return;
     }
+    // The apiBase effect performs the initial connection request.
+    // Avoid calling loadTasks here, which would issue the same request twice.
+    setNotice(null);
+    setLoading(true);
     setApiBase(cleaned);
-    await loadTasks(cleaned);
   };
 
   const createTask = async (event) => {
