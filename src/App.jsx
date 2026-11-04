@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState  } from 'react';
+import { createTodo, deleteTodo, listTodos, normalizeApiBase } from './api.js';
 import {
   Activity,
   AlertCircle,
@@ -20,13 +21,6 @@ import {
 } from 'lucide-react';
 
 const STORAGE_KEY = 'taskflow-api-base-v1';
-
-function normalizeApiBase(value) {
-  let result = value.trim().replace(/\/+$/, '');
-  // Accept either the invoke base URL or a URL ending in /todos.
-  result = result.replace(/\/todos$/i, '');
-  return result;
-}
 
 function friendlyError(error) {
   const message = String(error?.message || error || 'Unknown error');
@@ -68,13 +62,7 @@ export default function App() {
     setLoading(true);
     if (!quiet) setNotice(null);
     try {
-      const response = await fetch(`${cleaned}/todos`, { method: 'GET' });
-      const text = await response.text();
-      let data;
-      try { data = text ? JSON.parse(text) : null; }
-      catch { throw new Error(`API returned non-JSON content (HTTP ${response.status}). Check the Invoke URL.`); }
-      if (!response.ok) throw new Error(data?.message || `GET failed with HTTP ${response.status}`);
-      if (!Array.isArray(data)) throw new Error('Expected a JSON array from GET /todos. Check that the route is connected to the correct Lambda.');
+      const data = await listTodos(cleaned);
       setTasks(data.map((item) => ({ id: String(item.id ?? ''), task: String(item.task ?? '') })).filter((item) => item.id));
       setApiBase(cleaned);
       setApiDraft(cleaned);
@@ -106,27 +94,7 @@ export default function App() {
           throw new Error('The API URL must start with https://. Check your saved API Gateway Invoke URL.');
         }
 
-        const response = await fetch(`${cleaned}/todos`, {
-          method: 'GET',
-          signal: controller.signal,
-        });
-
-        const responseText = await response.text();
-        let data;
-
-        try {
-          data = responseText ? JSON.parse(responseText) : null;
-        } catch {
-          throw new Error(`API returned non-JSON content (HTTP ${response.status}). Check the Invoke URL.`);
-        }
-
-        if (!response.ok) {
-          throw new Error(data?.message || `GET failed with HTTP ${response.status}`);
-        }
-
-        if (!Array.isArray(data)) {
-          throw new Error('Expected a JSON array from GET /todos. Check that the route is connected to the correct Lambda.');
-        }
+        const data = await listTodos(cleaned, { signal: controller.signal });
 
         if (!active) return;
 
@@ -190,14 +158,7 @@ export default function App() {
     setSaving(true);
     setNotice(null);
     try {
-      const response = await fetch(`${normalizeApiBase(apiBase)}/todos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task }),
-      });
-      const text = await response.text();
-      const data = text ? JSON.parse(text) : null;
-      if (!response.ok) throw new Error(data?.message || `POST failed with HTTP ${response.status}`);
+      await createTodo(normalizeApiBase(apiBase), task);
       setTaskText('');
       const ok = await loadTasks(apiBase, true);
       if (ok) setNotice({ type: 'success', text: 'Task added and saved to DynamoDB.' });
@@ -213,14 +174,7 @@ export default function App() {
     setDeletingId(id);
     setNotice(null);
     try {
-      const response = await fetch(`${normalizeApiBase(apiBase)}/todos`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      });
-      const text = await response.text();
-      const data = text ? JSON.parse(text) : null;
-      if (!response.ok) throw new Error(data?.message || `DELETE failed with HTTP ${response.status}`);
+      await deleteTodo(normalizeApiBase(apiBase), id);
       const ok = await loadTasks(apiBase, true);
       if (ok) setNotice({ type: 'success', text: 'Task deleted from DynamoDB.' });
     } catch (error) {
